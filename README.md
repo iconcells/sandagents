@@ -6,7 +6,7 @@
 
 # Run Sandify Health
 
-Sandify collects patient health data from connected devices, such as heartbeat readings from a smartwatch. Patients can speak calming phrases like “rainbow” or “sunshine,” and the system uses AI to generate personalized animations and music that help guide them into a more relaxed state.
+Sandify collects patient health data from connected devices, such as heartbeat readings from a smartwatch or other devices that reads the Bio parameters. Patients can speak calming phrases like “rainbow” or “sunshine,” and the system uses AI to generate personalized animations and music that help guide them into a more relaxed state.
 
 The app is designed to combine voice interaction with real-time biometric data to encourage and support improvements in mental well-being, especially for patients recovering after surgery or during rehabilitation.
 
