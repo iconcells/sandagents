@@ -569,7 +569,7 @@ export class AudioSynthesizer {
 
   /**
    * Syncs the soundscape to smartwatch Biofeedback respiration signals.
-   * Maps chest expansion & heartbeat to filter cutoff and oscillator frequency sweeps!
+   * Maps chest expansion & heartbeat to filter cutoff, resonance (Q), and audio stem gains!
    */
   public updateBiofeedback(bio: WatchBiofeedback) {
     if (!this.ctx || !this.mainFilter || !this.currentConfig) return;
@@ -581,32 +581,62 @@ export class AudioSynthesizer {
     const now = this.ctx.currentTime;
     const baseCutoff = this.currentConfig.eqFilterCutoff;
 
+    // 1. DYNAMIC RESONANCE (Q-FACTOR) BASED ON HEART RATE
+    // Higher heart rate Bpm => tighter, sharper resonance (crisp feedback)
+    // Lower grounding heart rate Bpm => gentle, flat, cozy warmth
+    const normalHr = Math.max(45, Math.min(130, bio.heartRateBpm));
+    const targetQ = 1.0 + ((normalHr - 50) / 80) * 3.5; // range 1.0 to 4.5
+    this.mainFilter.Q.cancelScheduledValues(now);
+    this.mainFilter.Q.setTargetAtTime(targetQ, now, 0.4);
+
+    // 2. RESIDENCY-PHASE MULTIPLIER (FILTER SWEEP)
     // During 'inhale', open filter width to sound bright and airy
     // During 'hold', stay open
     // During 'exhale', deeply warm and cover the filter frequencies
     let phaseMultiplier = 1.0;
+    let inhaleProgressAdd = 0.0;
+    let exhaleProgressAdd = 0.0;
+
     if (bio.currentPhase === 'inhale') {
-      phaseMultiplier = 1.0 + (0.4 * bio.phaseProgress); // +40% brighter
+      phaseMultiplier = 1.0 + (0.45 * bio.phaseProgress); // +45% brighter
+      inhaleProgressAdd = bio.phaseProgress;
     } else if (bio.currentPhase === 'hold') {
-      phaseMultiplier = 1.4;
+      phaseMultiplier = 1.45;
     } else if (bio.currentPhase === 'exhale') {
-      phaseMultiplier = 1.4 - (0.5 * bio.phaseProgress); // -10% deeper warm filter cover
+      phaseMultiplier = 1.45 - (0.55 * bio.phaseProgress); // deep low-pass shielding
+      exhaleProgressAdd = bio.phaseProgress;
     }
 
     // Target cutoff frequency computed dynamically
     const targetCutoff = Math.max(150, Math.min(12000, baseCutoff * phaseMultiplier));
     this.mainFilter.frequency.cancelScheduledValues(now);
-    this.mainFilter.frequency.setTargetAtTime(targetCutoff, now, 0.35);
+    this.mainFilter.frequency.setTargetAtTime(targetCutoff, now, 0.3);
 
-    // Subtle heart bpm binaural frequency adjustment (HRV adjustment)
+    // 3. DYNAMIC VOICE-STEM COUPLING IN REAL TIME
+    // Wind swells gently on inhale representing cold air pulling in
+    if (this.windGain && this.currentConfig.natureSounds.softWind) {
+      const windVolume = (0.2 + (0.18 * inhaleProgressAdd)) * this.currentConfig.volume;
+      this.windGain.gain.setTargetAtTime(windVolume, now, 0.2);
+    }
+    // Water streams/bonfires swell gently on exhale representing relief and release grounding
+    if (this.waterGain && this.currentConfig.natureSounds.gentleWater) {
+      const waterVolume = (0.12 + (0.18 * exhaleProgressAdd)) * this.currentConfig.volume;
+      this.waterGain.gain.setTargetAtTime(waterVolume, now, 0.2);
+    }
+    if (this.fireGain && this.currentConfig.natureSounds.fireCrackling) {
+      const fireVolume = (0.12 + (0.18 * exhaleProgressAdd)) * this.currentConfig.volume;
+      this.fireGain.gain.setTargetAtTime(fireVolume, now, 0.2);
+    }
+
+    // 4. BINAURAL FREQUENCY TUNING BASED ON HRV
     if (this.leftOsc && this.rightOsc) {
       // Map HR BPM to carrier frequency offset slightly
-      const hrOffset = (bio.heartRateBpm - 60) * 0.1; // e.g. 70bpm adds +1Hz carrier pitch
+      const hrOffset = (bio.heartRateBpm - 60) * 0.12; // e.g. 70bpm adds +1.2Hz carrier pitch
       const baseCarrier = this.currentConfig.carrierFreq + hrOffset;
       const beat = this.currentConfig.beatFreq;
 
-      this.leftOsc.frequency.setTargetAtTime(baseCarrier - (beat / 2), now, 0.5);
-      this.rightOsc.frequency.setTargetAtTime(baseCarrier + (beat / 2), now, 0.5);
+      this.leftOsc.frequency.setTargetAtTime(baseCarrier - (beat / 2), now, 0.4);
+      this.rightOsc.frequency.setTargetAtTime(baseCarrier + (beat / 2), now, 0.4);
     }
   }
 }

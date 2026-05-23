@@ -163,12 +163,25 @@ export default function App() {
     }
   };
 
-  // Process user requested vocal or typed phrase
-  const handlePhraseSubmit = async (phrase: string) => {
+  // Keep track of the last submitted parameters to prevent redundant identical calls
+  const lastSubmittedRef = useRef({
+    phrase: '',
+    hr: 0,
+    br: 0
+  });
+
+  // Process user requested vocal or typed phrase along with current biofeedback
+  const handlePhraseSubmit = async (phrase: string, hr?: number, br?: number) => {
     if (!phrase.trim()) return;
     
     setIsProcessing(true);
     setErrorText(null);
+
+    const activeHr = hr ?? biofeedback.heartRateBpm;
+    const activeBr = br ?? biofeedback.breathingRateBpm;
+
+    // Record this configuration
+    lastSubmittedRef.current = { phrase, hr: activeHr, br: activeBr };
 
     try {
       // POST command to backend endpoint
@@ -177,7 +190,11 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ phrase })
+        body: JSON.stringify({ 
+          phrase,
+          heartRateBpm: activeHr,
+          breathingRateBpm: activeBr
+        })
       });
 
       if (!response.ok) {
@@ -293,12 +310,59 @@ export default function App() {
         };
       }
 
-      setEnvConfig(fallbackTheme);
-      setBinauralEnabled(fallbackTheme.audio.binauralEnabled);
+      // Apply dynamic biofeedback scaling to local state fallback
+      const isElevated = activeHr > 75 || activeBr > 8;
+      let finalFallback = fallbackTheme;
+      if (isElevated) {
+        finalFallback = {
+          ...fallbackTheme,
+          visuals: {
+            ...fallbackTheme.visuals,
+            particleSpeed: fallbackTheme.visuals.particleSpeed * 0.45,
+            particleCount: Math.round(fallbackTheme.visuals.particleCount * 0.8),
+          },
+          audio: {
+            ...fallbackTheme.audio,
+            carrierFreq: 110.0,
+            beatFreq: 3.2,
+            musicSynthType: (fallbackTheme.audio.musicSynthType === "crystal-chime" || fallbackTheme.audio.musicSynthType === "flute") ? "warm-pad" : fallbackTheme.audio.musicSynthType,
+            eqFilterCutoff: 600
+          },
+          narrativeText: `We detected an elevated heart rate of ${activeHr} BPM. Watch these slow-motion particles settle. Breathe on a slow ${activeBr}-breath cycle to help slow down your pulse and rest.`
+        };
+      }
+
+      setEnvConfig(finalFallback);
+      setBinauralEnabled(finalFallback.audio.binauralEnabled);
     } finally {
       setIsProcessing(false);
     }
   };
+
+  // Automated Debounced Re-generator: triggers whenever phrase, heart rate, or respiration freq changes
+  useEffect(() => {
+    if (!hasStarted) return;
+
+    const phrase = envConfig.keyPhrase;
+    const hr = biofeedback.heartRateBpm;
+    const br = biofeedback.breathingRateBpm;
+
+    // Do not re-request if the current values match the last submitted parameters (prevents infinite render loops)
+    if (
+      phrase.toLowerCase() === lastSubmittedRef.current.phrase.toLowerCase() &&
+      hr === lastSubmittedRef.current.hr &&
+      br === lastSubmittedRef.current.br
+    ) {
+      return;
+    }
+
+    // Debounce slider updates for 1000ms so sliding is exceptionally smooth
+    const timer = setTimeout(() => {
+      handlePhraseSubmit(phrase, hr, br);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [envConfig.keyPhrase, biofeedback.heartRateBpm, biofeedback.breathingRateBpm, hasStarted]);
 
   // Dynamically scale parameters in response to biofeedback phase to auto-adapt animations in real-time
   const adjustedVisuals = {
@@ -400,7 +464,7 @@ export default function App() {
                         SANDIFY
                       </h1>
                       <span className="text-[10px] text-slate-400 font-mono block">
-                        AI Speech Synthesis
+                        AI personalized mind therapy
                       </span>
                     </div>
                   </div>

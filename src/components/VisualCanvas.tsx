@@ -66,8 +66,8 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({ config, biofeedback 
         x: Math.random() * width,
         y: Math.random() * height,
         size: Math.random() * 3 + 1,
-        speedY: (Math.random() * 0.4 + 0.1) * (config.particleSpeed || 0.4),
-        speedX: (Math.random() * 0.3 - 0.15) * (config.particleSpeed || 0.4),
+        speedY: (Math.random() * 0.4 + 0.1),
+        speedX: (Math.random() * 0.3 - 0.15),
         alpha,
         maxAlpha: alpha + 0.2,
         phase: Math.random() * Math.PI * 2,
@@ -77,7 +77,14 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({ config, biofeedback 
     particlesRef.current = list;
   };
 
-  // Keep particles updated reactively when config color changes
+  // Keep particles updated reactively when config color or particle count changes
+  useEffect(() => {
+    const { width, height } = dimensionsRef.current;
+    if (width > 0 && height > 0) {
+      initParticles(width, height);
+    }
+  }, [config.particleCount]);
+
   useEffect(() => {
     const list = particlesRef.current;
     list.forEach(p => {
@@ -124,7 +131,12 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({ config, biofeedback 
       // Smooth beat scale modeled after the heartbeat
       const heartBeatPulseRange = 1 + (0.04 * Math.sin(Date.now() * (heartRateBpm / 60) * Math.PI * 2 / 1000));
 
-      const particleSpeedFactor = config.particleSpeed || 0.4;
+      // Realtime biofeedback-driven velocity scale factor: standard heart rate (70 BPM), breathing rate (6 BPM)
+      const hrVelocityMultiplier = Math.max(0.3, Math.min(2.5, biofeedback.heartRateBpm / 70));
+      const brVelocityMultiplier = Math.max(0.4, Math.min(2.5, biofeedback.breathingRateBpm / 6));
+      const biofeedbackVelocityScale = hrVelocityMultiplier * brVelocityMultiplier;
+
+      const particleSpeedFactor = (config.particleSpeed || 0.4) * biofeedbackVelocityScale;
       angleShift += 0.005 * particleSpeedFactor;
 
       // 2. Draw Visual-Specific Layer
@@ -285,6 +297,48 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({ config, biofeedback 
         ctx.beginPath();
         ctx.arc(width / 2, height, height * 0.9, 0, Math.PI * 2);
         ctx.fill();
+      } else if (style === 'rainbow' || config.theme === 'rainbow' || config.visualStyle === 'rainbow') {
+        // --- IMMERSIVE GLOWING SPECULAR RAINBOW ARCS ---
+        const rainbowColors = [
+          'rgba(239, 68, 68, ',   // Rose/Red
+          'rgba(249, 115, 22, ',  // Orange
+          'rgba(234, 179, 8, ',   // Yellow
+          'rgba(34, 197, 94, ',   // Clean Green
+          'rgba(59, 130, 246, ',  // Sky Blue
+          'rgba(168, 85, 247, ',  // Deep Violet
+          'rgba(236, 72, 153, '   // Bright Pink
+        ];
+        
+        const centerX = width / 2;
+        // The rainbow arches breathe (moves up and down gently on respiration)
+        const centerY = height * 1.05 + (Math.sin(angleShift) * 12);
+        const baseRadius = Math.min(width, height) * 0.28 * heartBeatPulseRange;
+        
+        ctx.save();
+        // Atmospheric soft color bloom behind the arches
+        const backGlow = ctx.createRadialGradient(centerX, centerY * 0.8, 10, centerX, centerY * 0.8, baseRadius * 1.8);
+        backGlow.addColorStop(0, 'rgba(168, 85, 247, 0.08)');
+        backGlow.addColorStop(0.5, 'rgba(56, 189, 248, 0.04)');
+        backGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = backGlow;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY * 0.8, baseRadius * 2.0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Render 7 concentric neon-relaxed rainbow tubes
+        ctx.lineWidth = Math.min(width, height) * 0.016 + (breathIntensity * 6);
+        ctx.lineCap = 'round';
+        
+        for (let r = 0; r < rainbowColors.length; r++) {
+          const radius = baseRadius + (r * ctx.lineWidth * 1.1) + (breathIntensity * 24);
+          const arcAlpha = (0.28 - (r * 0.02)) * (0.8 + 0.2 * Math.sin(angleShift + r));
+          
+          ctx.strokeStyle = `${rainbowColors[r]}${arcAlpha})`;
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, radius, Math.PI + 0.06, Math.PI * 2 - 0.06);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
 
       // 3. Draw Common Layer: Soft Luminescent Floating Spheres
@@ -293,8 +347,8 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({ config, biofeedback 
         const p = list[i];
         
         // Drift movement calculations
-        p.y -= p.speedY;
-        p.x += p.speedX + Math.sin(angleShift + p.phase) * 0.15;
+        p.y -= p.speedY * particleSpeedFactor;
+        p.x += (p.speedX * particleSpeedFactor) + Math.sin(angleShift + p.phase) * 0.15;
         
         // Wrap edges smoothly
         if (p.y < -50) {
@@ -313,15 +367,28 @@ export const VisualCanvas: React.FC<VisualCanvasProps> = ({ config, biofeedback 
         const glowAlpha = Math.min(1.0, Math.max(0, p.alpha * twinkle * (config.brightnessMultiplier || 1.0)));
         const colorHex = p.color;
 
-        // Draw soft feathered glow circle
-        ctx.fillStyle = `${colorHex}${Math.floor(glowAlpha * 255).toString(16).padStart(2, '0')}`;
+        // Special dynamic rainbow spectrum shift for floating elements
+        const isRainbowEffect = style === 'rainbow' || config.theme === 'rainbow' || config.visualStyle === 'rainbow';
+        
+        if (isRainbowEffect) {
+          const hue = Math.round((i * (360 / list.length) + angleShift * 35) % 360);
+          ctx.fillStyle = `hsla(${hue}, 95%, 70%, ${glowAlpha})`;
+        } else {
+          ctx.fillStyle = `${colorHex}${Math.floor(glowAlpha * 255).toString(16).padStart(2, '0')}`;
+        }
+        
         ctx.beginPath();
         ctx.arc(p.x, p.y, dynamicSize, 0, Math.PI * 2);
         ctx.fill();
 
         // Extra outer blur ring for larger magical particles
         if (dynamicSize > 3.5) {
-          ctx.fillStyle = `${colorHex}15`;
+          if (isRainbowEffect) {
+            const hue = Math.round((i * (360 / list.length) + angleShift * 35) % 360);
+            ctx.fillStyle = `hsla(${hue}, 95%, 70%, 0.12)`;
+          } else {
+            ctx.fillStyle = `${colorHex}15`;
+          }
           ctx.beginPath();
           ctx.arc(p.x, p.y, dynamicSize * 2.5, 0, Math.PI * 2);
           ctx.fill();

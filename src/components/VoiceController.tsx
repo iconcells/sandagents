@@ -15,64 +15,135 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
 }) => {
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
-  const [recognition, setRecognition] = useState<any>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  
+  const recognitionRef = useRef<any>(null);
+  const debounceTimerRef = useRef<any>(null);
 
-  // Initialize Speech Recognition
+  // Maintain hot-swappable reference to latest submit handler to completely solve stale closures
+  const onPhraseSubmitRef = useRef(onPhraseSubmit);
+  useEffect(() => {
+    onPhraseSubmitRef.current = onPhraseSubmit;
+  }, [onPhraseSubmit]);
+
+  // Synchronize input text with the active environment's key phrase
+  useEffect(() => {
+    if (currentPhrase) {
+      setInputText(currentPhrase);
+    }
+  }, [currentPhrase]);
+
+  // Clean background recognition and debouncer on unmount
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = 'en-US';
-
-      rec.onstart = () => {
-        setIsListening(true);
-        setSpeechError(null);
-      };
-
-      rec.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
-          setInputText(transcript);
-          onPhraseSubmit(transcript);
-        }
-      };
-
-      rec.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-          setSpeechError('Microphone permission denied. Feel free to type instead.');
-        } else if (event.error === 'network') {
-          setSpeechError('Speech network connection failed.');
-        } else {
-          setSpeechError(`Speech matching error: ${event.error}`);
-        }
-        setIsListening(false);
-      };
-
-      rec.onend = () => {
-        setIsListening(false);
-      };
-
-      setRecognition(rec);
+    if (!SpeechRecognition) {
+      setSpeechError('Speech recognition is not natively supported in this browser. Please type below.');
     }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+      }
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
   }, []);
 
+  // Handle typing inputs with dynamic smart auto-submission on keyboard pauses
+  const handleInputChange = (val: string) => {
+    setInputText(val);
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    const trimmed = val.trim();
+    if (!trimmed || trimmed.length < 3 || trimmed.toLowerCase() === currentPhrase.toLowerCase()) {
+      return;
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      onPhraseSubmitRef.current(trimmed);
+    }, 1000); // Wait for 1 second of inactivity to confirm phrase typing completes
+  };
+
   const toggleListening = () => {
-    if (!recognition) {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       setSpeechError('Speech recognition is not natively supported in this browser. Please type below.');
       return;
     }
 
     if (isListening) {
-      recognition.stop();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (err) {
+          console.error('Error stopping speech engine:', err);
+        }
+      }
+      setIsListening(false);
     } else {
       try {
-        recognition.start();
+        // Pre-emptively stop any hanging session
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.abort();
+          } catch (e) {}
+        }
+
+        const rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.lang = 'en-US';
+
+        rec.onstart = () => {
+          setIsListening(true);
+          setSpeechError(null);
+        };
+
+        rec.onresult = (event: any) => {
+          if (event.results && event.results[0] && event.results[0][0]) {
+            const transcript = event.results[0][0].transcript;
+            if (transcript) {
+              setInputText(transcript);
+              onPhraseSubmitRef.current(transcript);
+            }
+          }
+        };
+
+        rec.onerror = (event: any) => {
+          console.error('Speech recognition error event:', event.error);
+          if (event.error === 'not-allowed') {
+            setSpeechError('Microphone permission denied. Feel free to type instead.');
+          } else if (event.error === 'network') {
+            setSpeechError('Speech network connection failed.');
+          } else if (event.error === 'aborted') {
+            // normal termination, no error indicator
+          } else if (event.error === 'no-speech') {
+            // no speech processed, smooth transition
+          } else {
+            setSpeechError(`Speech error: ${event.error}`);
+          }
+          setIsListening(false);
+        };
+
+        rec.onend = () => {
+          setIsListening(false);
+          if (recognitionRef.current === rec) {
+            recognitionRef.current = null;
+          }
+        };
+
+        recognitionRef.current = rec;
+        rec.start();
       } catch (err) {
-        console.error('Failed to start speech recognition:', err);
+        console.error('Failed to construct or start Web SpeechRecognition engine:', err);
+        setSpeechError('Could not start microphone listening.');
+        setIsListening(false);
       }
     }
   };
@@ -80,11 +151,16 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
   const handleTextSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
     onPhraseSubmit(inputText);
-    setInputText('');
   };
 
   const handlePresetClick = (preset: string) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
     onPhraseSubmit(preset);
   };
 
@@ -185,7 +261,7 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
             id="input_voice_text"
             type="text"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             disabled={isProcessing}
             placeholder='Or type e.g. "rainy night"...'
             className="w-full bg-transparent border-none text-slate-200 outline-none text-[11px] px-2 py-0.5 placeholder:text-slate-600"

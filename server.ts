@@ -126,33 +126,77 @@ if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_
   console.log("No GEMINI_API_KEY environment variable detected or default placeholder used. Gemini generation will run with highly responsive local heuristic synthesis.");
 }
 
+// Global helper to dynamically adjust any visual/audio configuration to assist the patient's vitals when elevated.
+function calibrateConfigWithBiofeedback(baseConfig: any, hr: number, br: number, phrase: string) {
+  const isHrElevated = hr > 75;
+  const isBrElevated = br > 8;
+  const isBiofeedbackElevated = isHrElevated || isBrElevated;
+
+  if (!isBiofeedbackElevated) {
+    return baseConfig;
+  }
+
+  // Deep copy to prevent modifying static preset templates
+  const calibrated = JSON.parse(JSON.stringify(baseConfig));
+
+  // Slow down particle speed significantly to soothe the patient
+  calibrated.visuals.particleSpeed = (calibrated.visuals.particleSpeed || 0.4) * 0.45;
+  
+  // Set lower particle count to reduce sensory input
+  calibrated.visuals.particleCount = Math.round((calibrated.visuals.particleCount || 75) * 0.8);
+  
+  // Dynamic audio grounding carriers
+  calibrated.audio.carrierFreq = 110.0; // Deep grounding resonant carrying tone
+  calibrated.audio.beatFreq = 3.2; // Delta wave pulse pacing response
+  calibrated.audio.eqFilterCutoff = Math.min(calibrated.audio.eqFilterCutoff || 1000, 650);
+
+  // Transition to a warm soothing sound instead of chime/flute if instruments are elevated
+  if (calibrated.audio.musicSynthType === "crystal-chime" || calibrated.audio.musicSynthType === "flute") {
+    calibrated.audio.musicSynthType = "warm-pad";
+  }
+
+  // Explicitly reference vital signs and breathing coaching in the customized narrative
+  calibrated.narrativeText = `We detected an elevated heart rate of ${hr} BPM. Watch these slow-motion particles settle. Breathe on a slow ${br}-breath cycle to help slow down your pulse and rest.`;
+
+  return calibrated;
+}
+
 // Generate Relaxation Settings Endpoint
 app.post("/api/generate-environment", async (req, res) => {
-  const { phrase } = req.body;
+  const { phrase, heartRateBpm, breathingRateBpm } = req.body;
   if (!phrase || typeof phrase !== "string") {
     return res.status(400).json({ error: "Phrase is required and must be a string." });
   }
 
   const cleanPhrase = phrase.trim().toLowerCase();
+  const currentHr = Number(heartRateBpm) || 68;
+  const currentBr = Number(breathingRateBpm) || 6;
 
   // 1. Check direct preset matches
   if (cleanPhrase.includes("sunshine") || cleanPhrase === "sun") {
-    return res.json(presets.sunshine);
+    return res.json(calibrateConfigWithBiofeedback(presets.sunshine, currentHr, currentBr, phrase));
   }
   if (cleanPhrase.includes("star") || cleanPhrase.includes("cosmic") || cleanPhrase === "galaxy") {
-    return res.json(presets.star);
+    return res.json(calibrateConfigWithBiofeedback(presets.star, currentHr, currentBr, phrase));
   }
   if (cleanPhrase.includes("forest") || cleanPhrase.includes("woods") || cleanPhrase.includes("jungle")) {
-    return res.json(presets.forest);
+    return res.json(calibrateConfigWithBiofeedback(presets.forest, currentHr, currentBr, phrase));
   }
 
   // 2. Fallback or use Gemini API for creative generation
   if (ai) {
     try {
-      console.log(`Querying Gemini with natural language phrase: "${phrase}"`);
+      console.log(`Querying Gemini with natural language phrase: "${phrase}", hr: ${currentHr}, br: ${currentBr}`);
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: `Create a customized relaxation environment for the phrase: "${phrase}". Map this to relaxing parameters.`,
+        contents: `Create a customized, deeply relaxing audio-visual environment for the phrase: "${phrase}".
+Current patient biofeedback:
+- Heart Rate: ${currentHr} BPM (bpm above 75 indicates slightly elevated state that needs calming/pacing)
+- Respiration Frequency: ${currentBr} breaths per minute (values above 8 indicate faster breathing that needs slowing down).
+
+IMPORTANT BIOFEEDBACK ADAPTATION SYSTEM DESIGN SPECIFICATIONS:
+1. If the patient's heart rate is elevated (e.g. above 75 BPM) or breathing is fast (above 8 breaths/min), write a narrativeText of 1-2 reassuring, soothing sentences that explicitly mentions their current heart rate or breathing rate and instructs them to decelerate their breathing smoothly to steady their body.
+2. Ensure you adjust visuals and audio parameters to be deeply grounding. If elevated, make the animation 'particleSpeed' slower (e.g. 0.08 to 0.2), choose cooler and calmer dark backgrounds with low-light contrast, select deeper acoustic/pad-based background synthesizers (e.g. "warm-pad" or "soft-organ"), and reduce 'eqFilterCutoff' to make it extremely warm and cozy.`,
         config: {
           systemInstruction: "You are a meditation and audio-visual relaxation synthesizer coordinator. Convert any descriptive place, setting, or feeling into a structured JSON configuration for client-side HTML Canvas renderer and Web Audio synth engines. Choose atmospheric colors, custom musical synthesizers, sound flags, and write a peaceful, cozy guiding narrative of 1-2 comforting sentences.",
           responseMimeType: "application/json",
@@ -166,7 +210,7 @@ app.post("/api/generate-environment", async (req, res) => {
                   theme: { 
                     type: Type.STRING, 
                     description: "Pick matching visual theme",
-                    enum: ["sunshine", "star", "forest", "custom-warm", "custom-cool", "custom-cosmic", "custom-nature"]
+                    enum: ["sunshine", "star", "forest", "rainbow", "custom-warm", "custom-cool", "custom-cosmic", "custom-nature"]
                   },
                   primaryColor: { type: Type.STRING, description: "hex color matching theme" },
                   secondaryColor: { type: Type.STRING, description: "hex highlight color" },
@@ -175,7 +219,7 @@ app.post("/api/generate-environment", async (req, res) => {
                   particleSpeed: { type: Type.NUMBER, description: "how fast objects move or sway from 0.05 to 1.0" },
                   visualStyle: { 
                     type: Type.STRING, 
-                    enum: ["canopy", "waves", "constellations", "nebula", "trees", "particles", "embers", "aurora", "fluid"]
+                    enum: ["canopy", "waves", "constellations", "nebula", "trees", "particles", "embers", "aurora", "fluid", "rainbow"]
                   },
                   brightnessMultiplier: { type: Type.NUMBER, description: "relative light bloom intensity 0.5 to 1.5" }
                 },
@@ -218,7 +262,7 @@ app.post("/api/generate-environment", async (req, res) => {
       const responseText = response.text;
       if (responseText) {
         const generatedConfig = JSON.parse(responseText.trim());
-        return res.json(generatedConfig);
+        return res.json(calibrateConfigWithBiofeedback(generatedConfig, currentHr, currentBr, phrase));
       }
     } catch (error) {
       console.error("Gemini creative synthesis failed, resorting to custom rule engine:", error);
@@ -246,7 +290,18 @@ app.post("/api/generate-environment", async (req, res) => {
   let fireCrackling = false;
   let binauralBeats = true;
 
-  if (cleanPhrase.includes("rain") || cleanPhrase.includes("water") || cleanPhrase.includes("ocean") || cleanPhrase.includes("beach") || cleanPhrase.includes("sea")) {
+  if (cleanPhrase.includes("rainbow") || cleanPhrase.includes("color") || cleanPhrase.includes("spectrum") || cleanPhrase.includes("prism")) {
+    theme = 'rainbow';
+    primaryColor = "#ec4899"; // Vibrant rose
+    secondaryColor = "#3b82f6"; // Brilliant sky blue
+    backgroundColor = "#03020d"; // Dark background to make rainbow arcs pop
+    particleCount = 110;
+    particleSpeed = 0.3;
+    visualStyle = 'rainbow';
+    musicSynthType = 'crystal-chime';
+    birdsChirping = true;
+    softWind = true;
+  } else if (cleanPhrase.includes("rain") || cleanPhrase.includes("water") || cleanPhrase.includes("ocean") || cleanPhrase.includes("beach") || cleanPhrase.includes("sea")) {
     theme = 'custom-cool';
     primaryColor = "#38bdf8"; // Light sky blue
     secondaryColor = "#0284c7"; // Ocean blue
@@ -326,7 +381,7 @@ app.post("/api/generate-environment", async (req, res) => {
     narrativeText: `The elements of your phrase "${phrase}" have dissolved into a tailored auditory blanket. Ground yourself in this custom shelter as the dynamic layers balance and sync with your rhythm.`
   };
 
-  return res.json(ruleSettings);
+  return res.json(calibrateConfigWithBiofeedback(ruleSettings, currentHr, currentBr, phrase));
 });
 
 // Configure Vite or Serve Static Files

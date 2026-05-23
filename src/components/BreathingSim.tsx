@@ -26,6 +26,11 @@ export const BreathingSim: React.FC<BreathingSimProps> = ({ biofeedback, onChang
     onChange({ connected: !biofeedback.connected });
   };
 
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
   // Run the Breathing Clock Cycle (Inhale -> Hold -> Exhale ->...)
   useEffect(() => {
     if (!biofeedback.connected) {
@@ -33,7 +38,6 @@ export const BreathingSim: React.FC<BreathingSimProps> = ({ biofeedback, onChang
       return;
     }
 
-    let progressIncrement = 0.05; // updates every 50ms
     let intervalMs = 50;
 
     timerRef.current = window.setInterval(() => {
@@ -64,23 +68,11 @@ export const BreathingSim: React.FC<BreathingSimProps> = ({ biofeedback, onChang
           setLocalPhase(nextPhase);
           setTimeLeft(nextTime);
           
-          // Trigger parent update immediately
-          onChange({
-            currentPhase: nextPhase,
-            phaseProgress: 0
-          });
-
           return 0;
         } else {
           const currentSecondsLeft = currentMax * (1 - nextProgress);
           setTimeLeft(Math.max(0, parseFloat(currentSecondsLeft.toFixed(1))));
           
-          // Propagate smooth progress back to parent
-          onChange({
-            currentPhase: localPhase,
-            phaseProgress: nextProgress
-          });
-
           return nextProgress;
         }
       });
@@ -90,6 +82,16 @@ export const BreathingSim: React.FC<BreathingSimProps> = ({ biofeedback, onChang
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [biofeedback.connected, localPhase, inhaleSec, holdSec, exhaleSec]);
+
+  // Synchronize state safely to parent on separate side-effect ticks instead of during render / setstate calculation
+  useEffect(() => {
+    if (biofeedback.connected) {
+      onChangeRef.current({
+        currentPhase: localPhase,
+        phaseProgress: localProgress
+      });
+    }
+  }, [localPhase, localProgress, biofeedback.connected]);
 
   // Handle manual adjustments
   const handleRateSlider = (rate: number) => {
