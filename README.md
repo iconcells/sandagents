@@ -1,7 +1,7 @@
 <img width="1111" height="685" alt="Screenshot 2026-05-22 at 6 42 31 PM" src="https://github.com/user-attachments/assets/5145f646-605b-4eb9-8b7f-75f888f18821" />
 <img width="1111" height="693" alt="Screenshot 2026-05-22 at 6 43 02 PM" src="https://github.com/user-attachments/assets/b662f325-da9e-42b9-ada7-7352949c8979" />
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+
 </div>
 
 # Run Sandify Health
