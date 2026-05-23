@@ -1,0 +1,10 @@
+{
+  "name": "Voice-Controlled Relaxation App",
+  "description": "An interactive, voice-controlled relaxation environment that processes natural speech using Gemini to dynamically synthesize audio landscapes and real-time visual animations, integrated with watch-simulated biofeedback.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
