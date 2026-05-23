@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Send, MessageSquareHeart, Sparkles, Volume2, CloudSun, Moon, Trees } from 'lucide-react';
+import { Mic, MicOff, Send, MessageSquareHeart, Sparkles, Volume2, CloudSun, Moon, Trees, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface VoiceControllerProps {
@@ -38,7 +38,50 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setSpeechError('Speech recognition is not natively supported in this browser. Please type below.');
+      return;
     }
+
+    const rec = new SpeechRecognition();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = 'en-US';
+
+    rec.onstart = () => {
+      setIsListening(true);
+      setSpeechError(null);
+    };
+
+    rec.onresult = (event: any) => {
+      if (event.results && event.results[0] && event.results[0][0]) {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setInputText(transcript);
+          onPhraseSubmitRef.current(transcript);
+        }
+      }
+    };
+
+    rec.onerror = (event: any) => {
+      console.error('Speech recognition error event:', event.error);
+      if (event.error === 'not-allowed') {
+        setSpeechError('Microphone permission denied. Feel free to type instead.');
+      } else if (event.error === 'network') {
+        setSpeechError('Speech network connection failed.');
+      } else if (event.error === 'aborted') {
+        // normal termination, no error indicator
+      } else if (event.error === 'no-speech') {
+        // no speech processed, smooth transition
+      } else {
+        setSpeechError(`Speech error: ${event.error}`);
+      }
+      setIsListening(false);
+    };
+
+    rec.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = rec;
 
     return () => {
       if (recognitionRef.current) {
@@ -71,79 +114,39 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
   };
 
   const toggleListening = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    if (!recognitionRef.current) {
       setSpeechError('Speech recognition is not natively supported in this browser. Please type below.');
       return;
     }
 
     if (isListening) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (err) {
-          console.error('Error stopping speech engine:', err);
-        }
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {
+        console.error('Error stopping speech engine:', err);
       }
       setIsListening(false);
     } else {
       try {
-        // Pre-emptively stop any hanging session
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.abort();
-          } catch (e) {}
-        }
-
-        const rec = new SpeechRecognition();
-        rec.continuous = false;
-        rec.interimResults = false;
-        rec.lang = 'en-US';
-
-        rec.onstart = () => {
-          setIsListening(true);
-          setSpeechError(null);
-        };
-
-        rec.onresult = (event: any) => {
-          if (event.results && event.results[0] && event.results[0][0]) {
-            const transcript = event.results[0][0].transcript;
-            if (transcript) {
-              setInputText(transcript);
-              onPhraseSubmitRef.current(transcript);
-            }
-          }
-        };
-
-        rec.onerror = (event: any) => {
-          console.error('Speech recognition error event:', event.error);
-          if (event.error === 'not-allowed') {
-            setSpeechError('Microphone permission denied. Feel free to type instead.');
-          } else if (event.error === 'network') {
-            setSpeechError('Speech network connection failed.');
-          } else if (event.error === 'aborted') {
-            // normal termination, no error indicator
-          } else if (event.error === 'no-speech') {
-            // no speech processed, smooth transition
-          } else {
-            setSpeechError(`Speech error: ${event.error}`);
-          }
-          setIsListening(false);
-        };
-
-        rec.onend = () => {
-          setIsListening(false);
-          if (recognitionRef.current === rec) {
-            recognitionRef.current = null;
-          }
-        };
-
-        recognitionRef.current = rec;
-        rec.start();
+        setSpeechError(null);
+        recognitionRef.current.start();
       } catch (err) {
         console.error('Failed to construct or start Web SpeechRecognition engine:', err);
-        setSpeechError('Could not start microphone listening.');
-        setIsListening(false);
+        try {
+          recognitionRef.current.abort();
+          setTimeout(() => {
+            try {
+              recognitionRef.current.start();
+            } catch (retryErr) {
+              console.error('Failed speech recognition retry start:', retryErr);
+              setSpeechError('Could not start microphone listening.');
+              setIsListening(false);
+            }
+          }, 100);
+        } catch (abortErr) {
+          setSpeechError('Could not start microphone listening.');
+          setIsListening(false);
+        }
       }
     }
   };
@@ -208,7 +211,7 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
         <div className="relative flex items-center justify-center shrink-0">
           {/* Glowing Animated Ripple rings */}
           <AnimatePresence>
-            {isListening && (
+            {isListening && !isProcessing && (
               <>
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0.5 }}
@@ -224,13 +227,21 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
           <button
             id="btn_mic_action"
             onClick={toggleListening}
-            className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 shadow-sm ${
-              isListening 
-                ? 'bg-red-500 hover:bg-red-600 shadow-[0_0_10px_rgba(239,68,68,0.4)] text-white' 
-                : 'bg-indigo-600 hover:bg-indigo-500 text-indigo-100'
+            disabled={isProcessing}
+            className={`h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-sm z-10 shrink-0 overflow-hidden ${
+              isProcessing
+                ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.5)] text-amber-50 cursor-wait w-auto px-3.5 gap-2'
+                : isListening 
+                  ? 'w-9 bg-red-500 hover:bg-red-600 shadow-[0_0_10px_rgba(239,68,68,0.4)] text-white cursor-pointer' 
+                  : 'w-9 bg-indigo-600 hover:bg-indigo-500 text-indigo-100 cursor-pointer'
             }`}
           >
-            {isListening ? (
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-white" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Processing..</span>
+              </>
+            ) : isListening ? (
               <Volume2 className="w-4 h-4 animate-pulse text-white" />
             ) : (
               <Mic className="w-4 h-4 text-white" />
@@ -239,16 +250,16 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
         </div>
 
         <div className="flex-1 text-left min-w-0">
-          <p className="font-sans text-[11px] font-semibold text-slate-300 truncate">
-            {isListening ? 'Listening for voice...' : 'Tap Mic to speak phrase'}
+          <p className="font-sans text-[11px] font-semibold text-slate-300 truncate transition-all">
+            {isProcessing ? 'Synthesizing...' : isListening ? 'Listening for voice...' : 'Tap Mic to speak phrase'}
           </p>
-          {speechError ? (
+          {speechError && !isProcessing ? (
             <p className="text-[9px] text-rose-400 font-sans truncate">
               {speechError}
             </p>
           ) : (
             <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
-              HTML5 speech API
+              {isProcessing ? 'Please wait' : 'HTML5 speech API'}
             </p>
           )}
         </div>
