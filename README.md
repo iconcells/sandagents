@@ -4,11 +4,13 @@
 <img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>
 
-# Run and deploy your AI Studio app
+# Run Sandify Health
 
-This contains everything you need to run your app locally.
+Sandify collects patient health data from connected devices, such as heartbeat readings from a smartwatch. Patients can speak calming phrases like “rainbow” or “sunshine,” and the system uses AI to generate personalized animations and music that help guide them into a more relaxed state.
 
-View your app in AI Studio: https://ai.studio/apps/ffb88e5b-555d-4763-826b-694d9e12ca72
+The app is designed to combine voice interaction with real-time biometric data to encourage and support improvements in mental well-being, especially for patients recovering after surgery or during rehabilitation.
+
+Demo: https://ai.studio/apps/ffb88e5b-555d-4763-826b-694d9e12ca72
 
 ## Run Locally
 
