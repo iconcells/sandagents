@@ -10,7 +10,7 @@ Sandify collects patient health data from connected devices, such as heartbeat r
 
 The app is designed to combine voice interaction with real-time biometric data to encourage and support improvements in mental well-being, especially for patients recovering after surgery or during rehabilitation.
 
-Demo: https://ai.studio/apps/ffb88e5b-555d-4763-826b-694d9e12ca72
+Demo: https://voice-controlled-relaxation-app-241950949809.us-east1.run.app
 
 ## Run Locally
 
