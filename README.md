@@ -4,7 +4,9 @@
 
 # Run and deploy your AI Studio app
 
-This app takes input of patient's health parameters from devices, such as heartbeats from watch. Patients will be able to say different phases, like rainbow, sunshine, and the system will use AI to generate the animation and music to direct the patient to relax. 
+This app collects patient health data from connected devices, such as heartbeat readings from a smartwatch. Patients can speak calming phrases like “rainbow” or “sunshine,” and the system uses AI to generate personalized animations and music that help guide them into a more relaxed state.
+
+The app is designed to combine voice interaction with real-time biometric data to encourage and support improvements in mental well-being, especially for patients recovering after surgery or during rehabilitation.
 
 View your app https://voice-controlled-relaxation-app-241950949809.us-east1.run.app
 
