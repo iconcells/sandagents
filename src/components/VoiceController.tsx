@@ -250,16 +250,16 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
         </div>
 
         <div className="flex-1 text-left min-w-0">
-          <p className="font-sans text-[11px] font-semibold text-slate-300 truncate transition-all">
-            {isProcessing ? 'Synthesizing...' : isListening ? 'Listening for voice...' : 'Tap Mic to speak phrase'}
+          <p className="font-sans text-[11px] font-semibold text-amber-400 truncate transition-all">
+            {isProcessing ? 'Calling AI Music & Visuals Agents...' : isListening ? 'Listening for voice...' : 'Tap Mic to speak phrase'}
           </p>
           {speechError && !isProcessing ? (
             <p className="text-[9px] text-rose-400 font-sans truncate">
               {speechError}
             </p>
           ) : (
-            <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
-              {isProcessing ? 'Please wait' : 'HTML5 speech API'}
+            <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider truncate">
+              {isProcessing ? 'Google Generative Platform Working' : 'HTML5 speech API'}
             </p>
           )}
         </div>

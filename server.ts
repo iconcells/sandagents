@@ -172,33 +172,23 @@ app.post("/api/generate-environment", async (req, res) => {
   const currentHr = Number(heartRateBpm) || 68;
   const currentBr = Number(breathingRateBpm) || 6;
 
-  // 1. Check direct preset matches
-  if (cleanPhrase.includes("sunshine") || cleanPhrase === "sun") {
-    return res.json(calibrateConfigWithBiofeedback(presets.sunshine, currentHr, currentBr, phrase));
-  }
-  if (cleanPhrase.includes("star") || cleanPhrase.includes("cosmic") || cleanPhrase === "galaxy") {
-    return res.json(calibrateConfigWithBiofeedback(presets.star, currentHr, currentBr, phrase));
-  }
-  if (cleanPhrase.includes("forest") || cleanPhrase.includes("woods") || cleanPhrase.includes("jungle")) {
-    return res.json(calibrateConfigWithBiofeedback(presets.forest, currentHr, currentBr, phrase));
-  }
-
-  // 2. Fallback or use Gemini API for creative generation
+  // If Gemini is available, we ALWAYS use it as the Creative Director to ensure dynamic, highly responsive generation
   if (ai) {
     try {
-      console.log(`Querying Gemini with natural language phrase: "${phrase}", hr: ${currentHr}, br: ${currentBr}`);
+      console.log(`Querying Gemini (Creative Director) with phrase: "${phrase}", HR: ${currentHr}, BR: ${currentBr}`);
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: `Create a customized, deeply relaxing audio-visual environment for the phrase: "${phrase}".
+        contents: `You are a world-class creative director and visual artist from Google. Create a customized, deeply relaxing audio-visual environment for the user's phrase: "${phrase}".
 Current patient biofeedback:
-- Heart Rate: ${currentHr} BPM (bpm above 75 indicates slightly elevated state that needs calming/pacing)
-- Respiration Frequency: ${currentBr} breaths per minute (values above 8 indicate faster breathing that needs slowing down).
+- Heart Rate: ${currentHr} BPM (Values above 75 indicate elevated stress; use slower speeds, cooler/darker colors, and grounding sounds).
+- Respiration Frequency: ${currentBr} breaths per minute (Values above 8 indicate fast breathing; use slower visual rhythms and calmer pads to coach them down).
 
 IMPORTANT BIOFEEDBACK ADAPTATION SYSTEM DESIGN SPECIFICATIONS:
-1. If the patient's heart rate is elevated (e.g. above 75 BPM) or breathing is fast (above 8 breaths/min), write a narrativeText of 1-2 reassuring, soothing sentences that explicitly mentions their current heart rate or breathing rate and instructs them to decelerate their breathing smoothly to steady their body.
-2. Ensure you adjust visuals and audio parameters to be deeply grounding. If elevated, make the animation 'particleSpeed' slower (e.g. 0.08 to 0.2), choose cooler and calmer dark backgrounds with low-light contrast, select deeper acoustic/pad-based background synthesizers (e.g. "warm-pad" or "soft-organ"), and reduce 'eqFilterCutoff' to make it extremely warm and cozy.`,
+1. Dynamically invent the most beautiful, appropriate visual theme and color palette to match the phrase. Do not just use static values—feel free to be highly creative while prioritizing relaxation.
+2. Write a narrativeText of 1-3 reassuring, soothing sentences that explicitly mentions their current heart rate and breathing rate, and instructs them with a calming, artistic tone.
+3. Choose the audio elements (synth type, binaural beats, nature sounds) to perfectly complement the visual aesthetic and their current vitals.`,
         config: {
-          systemInstruction: "You are a meditation and audio-visual relaxation synthesizer coordinator. Convert any descriptive place, setting, or feeling into a structured JSON configuration for client-side HTML Canvas renderer and Web Audio synth engines. Choose atmospheric colors, custom musical synthesizers, sound flags, and write a peaceful, cozy guiding narrative of 1-2 comforting sentences.",
+          systemInstruction: "You are a creative director and visual artist from Google specializing in therapeutic, bio-responsive audio-visual experiences. Convert the user's state into a strictly structured JSON configuration for a client-side HTML Canvas renderer and Web Audio synth engine.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -216,7 +206,7 @@ IMPORTANT BIOFEEDBACK ADAPTATION SYSTEM DESIGN SPECIFICATIONS:
                   secondaryColor: { type: Type.STRING, description: "hex highlight color" },
                   backgroundColor: { type: Type.STRING, description: "dark background hex color (highly contrastive offset e.g. deep blue, charcoal, dark plum)" },
                   particleCount: { type: Type.INTEGER, description: "number of particles between 30 and 150" },
-                  particleSpeed: { type: Type.NUMBER, description: "how fast objects move or sway from 0.05 to 1.0" },
+                  particleSpeed: { type: Type.NUMBER, description: "how fast objects move or sway from 0.05 to 1.0 (reduce significantly for high HR/BR)" },
                   visualStyle: { 
                     type: Type.STRING, 
                     enum: ["canopy", "waves", "constellations", "nebula", "trees", "particles", "embers", "aurora", "fluid", "rainbow"]
@@ -252,7 +242,7 @@ IMPORTANT BIOFEEDBACK ADAPTATION SYSTEM DESIGN SPECIFICATIONS:
                 },
                 required: ["binauralEnabled", "carrierFreq", "beatFreq", "musicSynthType", "volume", "natureSounds", "eqFilterCutoff"]
               },
-              narrativeText: { type: Type.STRING, description: "Deeply soothing text of 1 or 2 comforting sentences explaining the magic of this custom synthesized environment." }
+              narrativeText: { type: Type.STRING, description: "Creative, deeply soothing text explaining the magic of this visual environment." }
             },
             required: ["keyPhrase", "visuals", "audio", "narrativeText"]
           }
@@ -262,11 +252,23 @@ IMPORTANT BIOFEEDBACK ADAPTATION SYSTEM DESIGN SPECIFICATIONS:
       const responseText = response.text;
       if (responseText) {
         const generatedConfig = JSON.parse(responseText.trim());
-        return res.json(calibrateConfigWithBiofeedback(generatedConfig, currentHr, currentBr, phrase));
+        // Do not use the hardcoded calibrateConfigWithBiofeedback since Gemini is doing it natively via prompt now
+        return res.json(generatedConfig);
       }
     } catch (error) {
       console.error("Gemini creative synthesis failed, resorting to custom rule engine:", error);
     }
+  }
+
+  // 1. Check direct preset matches ONLY as a fallback if AI is unavailable or fails
+  if (cleanPhrase.includes("sunshine") || cleanPhrase === "sun") {
+    return res.json(calibrateConfigWithBiofeedback(presets.sunshine, currentHr, currentBr, phrase));
+  }
+  if (cleanPhrase.includes("star") || cleanPhrase.includes("cosmic") || cleanPhrase === "galaxy") {
+    return res.json(calibrateConfigWithBiofeedback(presets.star, currentHr, currentBr, phrase));
+  }
+  if (cleanPhrase.includes("forest") || cleanPhrase.includes("woods") || cleanPhrase.includes("jungle")) {
+    return res.json(calibrateConfigWithBiofeedback(presets.forest, currentHr, currentBr, phrase));
   }
 
   // 3. Robust dynamic rule generator if Gemini is unavailable or errors
